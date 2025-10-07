@@ -1,0 +1,42 @@
+name: Build and publish container image (GHCR via Podman)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman buildah skopeo
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Logging in to ghcr.io as ${{ github.actor }}"
+          echo "${GITHUB_TOKEN}" | podman login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Build, tag and push image with Podman
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/docusaurus-container
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          echo "Building image $IMAGE:latest from Containerfile"
+          podman build -f Containerfile -t ${IMAGE}:latest .
+          podman tag ${IMAGE}:latest ${IMAGE}:${GITHUB_SHA}
+          echo "Pushing ${IMAGE}:latest"
+          podman push ${IMAGE}:latest
+          echo "Pushing ${IMAGE}:${GITHUB_SHA}"
+          podman push ${IMAGE}:${GITHUB_SHA}
