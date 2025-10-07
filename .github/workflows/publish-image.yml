@@ -15,28 +15,49 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Install Podman
+      - name: Install Podman, Buildah, Skopeo and QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman buildah skopeo
+          sudo apt-get install -y podman buildah skopeo qemu-user-static
 
-      - name: Login to GHCR
+      - name: Register QEMU interpreters (binfmt)
+        run: |
+          # Use tonistiigi/binfmt to register emulation handlers so podman/buildah can cross-build
+          sudo podman run --rm --privileged tonistiigi/binfmt --install all || true
+
+      - name: Login to GHCR with Podman
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Logging in to ghcr.io as ${{ github.actor }}"
           echo "${GITHUB_TOKEN}" | podman login ghcr.io --username "${{ github.actor }}" --password-stdin
 
-      - name: Build, tag and push image with Podman
+      - name: Build, push per-arch images and create manifest
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/docusaurus-container
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          echo "Building image $IMAGE:latest from Containerfile"
-          podman build -f Containerfile -t ${IMAGE}:latest .
-          podman tag ${IMAGE}:latest ${IMAGE}:${GITHUB_SHA}
-          echo "Pushing ${IMAGE}:latest"
-          podman push ${IMAGE}:latest
-          echo "Pushing ${IMAGE}:${GITHUB_SHA}"
-          podman push ${IMAGE}:${GITHUB_SHA}
+          set -euxo pipefail
+
+          # Build amd64
+          echo "Building amd64 image"
+          podman build --arch amd64 -f Containerfile -t ${IMAGE}:amd64 .
+          podman push ${IMAGE}:amd64
+
+          # Build arm64
+          echo "Building arm64 image"
+          podman build --arch arm64 -f Containerfile -t ${IMAGE}:arm64 .
+          podman push ${IMAGE}:arm64
+
+          # Create and push manifest list for :latest
+          echo "Creating and pushing manifest list for :latest"
+          podman manifest create ${IMAGE}:latest || true
+          podman manifest add ${IMAGE}:latest ${IMAGE}:amd64
+          podman manifest add ${IMAGE}:latest ${IMAGE}:arm64
+          podman manifest push --all ${IMAGE}:latest docker://${IMAGE}:latest
+
+          # Tag manifest with SHA and push
+          podman manifest create ${IMAGE}:${GITHUB_SHA} || true
+          podman manifest add ${IMAGE}:${GITHUB_SHA} ${IMAGE}:amd64
+          podman manifest add ${IMAGE}:${GITHUB_SHA} ${IMAGE}:arm64
+          podman manifest push --all ${IMAGE}:${GITHUB_SHA} docker://${IMAGE}:${GITHUB_SHA}

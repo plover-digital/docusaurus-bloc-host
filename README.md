@@ -16,15 +16,13 @@ podman build -t docusaurus-container -f Containerfile .
 Run (serve the built site):
 
 ```bash
-podman run --rm -p 3000:3000 -v /path/to/your/markdown:/docs:Z \
-  -e MODE=build docusaurus-container
+podman run --rm -p 3000:3000 -v /path/to/your/markdown:/docs:Z -e MODE=build docusaurus-container
 ```
 
 Run in dev mode (hot reload):
 
 ```bash
-podman run --rm -p 3000:3000 -v /path/to/your/markdown:/docs:Z \
-  -e MODE=dev docusaurus-container
+podman run --rm -p 3000:3000 -v /path/to/your/markdown:/docs:Z -e MODE=dev docusaurus-container
 ```
 
 Notes
